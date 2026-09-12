@@ -1,0 +1,4 @@
+clones/
+__pycache__/
+*.rerun.jsonl
+.DS_Store
