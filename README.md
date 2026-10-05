@@ -1,5 +1,7 @@
 # Do the rules in CLAUDE.md and AGENTS.md change anything?
 
+[![ci](https://github.com/Yerkhat1/agent-instruction-files/actions/workflows/ci.yml/badge.svg)](https://github.com/Yerkhat1/agent-instruction-files/actions/workflows/ci.yml)
+
 Repositories now ship a plain-text file telling an AI coding assistant how to behave in that project. People treat it as governance: write the rule down, the assistant follows it. This measures whether that holds, across **753 rules in 410 public Python repositories**.
 
 Compliance is computed by walking the Python AST and scanning lines at two revisions: the commit where the rule first appears, and HEAD. No language model scores anything, so every figure is reproducible from the committed data.
