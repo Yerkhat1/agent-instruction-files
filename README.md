@@ -1,67 +1,114 @@
-# Agent instruction files: what the rules in CLAUDE.md and AGENTS.md actually do
+# Do the rules in CLAUDE.md and AGENTS.md change anything?
 
-Repositories now ship a prose file, `CLAUDE.md` or `AGENTS.md`, that tells an AI coding assistant how to behave in that project. People treat these files as governance: write a rule down and the assistant follows it. This repository measures whether that holds, using 753 rule instances from 410 public Python repositories.
+Repositories now ship a plain-text file telling an AI coding assistant how to behave in that project. People treat it as governance: write the rule down, the assistant follows it. This measures whether that holds, across **753 rules in 410 public Python repositories**.
 
-Compliance is computed by static analysis (Python AST traversal and line scanning) at two points: the commit where the rule first appears, and the current head. No language model scores or judges anything.
+Compliance is computed by walking the Python AST and scanning lines at two revisions: the commit where the rule first appears, and HEAD. No language model scores anything, so every figure is reproducible from the committed data.
 
-## Findings
+```console
+$ pip install -e .
+$ policyprop report
+instances 753  repositories 410
+ceremonial (>= 90% compliance already) 66.7%
+mean baseline compliance 86.2%
 
-**Most rules record existing practice.** Two thirds of the rules were written against code that already met them at 90% or better. It depends heavily on the kind of rule.
+prescriptive instances 251
+  headroom captured, tool-backed      +10.21%
+  headroom captured, declaration-only +3.64%
+  contact, tool-backed      0.472
+  contact, declaration-only 0.516
 
-| rule family | instances | compliance before the rule | already at 90%+ | change after |
+difference +0.0657  stratified permutation p = 0.0219
+95% clustered bootstrap interval [+0.0071, +0.1255]
+```
+
+## What it found
+
+**Two thirds of rules describe code that already complied.** It depends on the family:
+
+| rule family | instances | compliance before the rule | already at ceiling | change after |
 |---|---|---|---|---|
 | line length | 255 | 97.1% | 98% | −0.05 pts |
 | type annotations | 393 | 83.6% | 56% | +1.45 pts |
 | docstrings | 105 | 69.2% | 30% | +1.63 pts |
 | all | 753 | 86.2% | 67% | +0.97 pts |
 
-**When a rule asks for change, enforcement matters more than reach.** For the 251 rules that started below 90%, rules backed by a linter or type checker closed 10.2% of the remaining gap. Rules that existed only as prose closed 3.6%.
+Line-length rules are ceremony. Docstring rules are not. An evaluation that treats "rule present" as an intervention averages the two and concludes instruction files do nothing.
 
-| | tool-backed (142) | prose only (109) | p |
+**Among rules that did ask for change, enforcement beats prose.** Restricted to the 251 instances declared below ceiling:
+
+| | tool-backed (142) | declaration-only (109) | p |
 |---|---|---|---|
 | share of files edited after the rule | 0.472 | 0.516 | 0.38 |
-| share of remaining gap closed | 10.21% | 3.64% | 0.022 |
+| share of the remaining gap closed | 10.21% | 3.64% | **0.022** |
 
-The p-values come from 20,000 permutations with labels shuffled within each rule family. A bootstrap that resamples whole repositories puts the difference at 6.6 points, 95% interval 0.7 to 12.6.
+Both arms opened a similar share of their files. The difference is what happened once a file was open: a formatter or type checker applies the rule to whatever passes through it, while an assistant editing a file for an unrelated reason usually leaves a prose rule unapplied.
 
-Both groups edited a similar share of their files. The difference is in what happened to a file once it was opened: a formatter or type checker applies the rule to anything it touches, while an assistant editing a file for some other reason mostly leaves the prose rule unapplied.
+p-values come from 20,000 permutations with labels shuffled inside each rule family, because the arms do not contain the same mix of families. The bootstrap resamples whole repositories, since one repository contributes several instances.
 
-**Limits.** This comparison is observational, not randomized. Projects that configure linters differ from projects that don't in ways this data can't see. The gap-closed distribution is skewed (median 0.81% vs 0%), so a minority of instances drives the means. The three rule families measured here are exactly the ones for which tooling already exists.
+## How it works
+
+```mermaid
+flowchart LR
+    A[GitHub code search<br/>CLAUDE.md / AGENTS.md] --> B[classify<br/>which rule families<br/>are declared]
+    B --> C{enforcement config<br/>in the repo?}
+    C -->|ruff, mypy, pre-commit| D[tool-backed]
+    C -->|nothing| E[declaration-only]
+    B --> F[date the rule<br/>binary search over<br/>the file's history]
+    D & E & F --> G[clone, blobs filtered]
+    G --> H[measure compliance<br/>AST + line scan<br/>at rule date and HEAD]
+    H --> I[(data/measures.jsonl)]
+    I --> J[analysis<br/>stratified permutation<br/>clustered bootstrap]
+```
+
+A rule's date comes from a binary search over the instruction file's revisions, which is O(log n) blob fetches instead of one per revision. Measurement extracts each revision as a single tar via `git archive` rather than one `git show` per file; that change alone took a full pass from hours to minutes.
+
+## Install and run
+
+Python 3.11+, no third-party dependencies for the analysis.
+
+```bash
+pip install -e .
+policyprop report                 # all figures
+policyprop verify                 # recompute and fail if any disagrees with the paper
+pytest                            # 33 tests
+```
+
+Re-running collection needs an authenticated `gh` CLI and hits live GitHub:
+
+```bash
+python pipeline/01_discover_classify.py    # search + classify + date rules
+python pipeline/02_measure.py              # clone and measure
+```
 
 ## Layout
 
-| path | contents |
+| path | what |
 |---|---|
-| `data/measures.jsonl` | one record per rule instance: repository, rule family, tool-backed flag, rule date, file counts, compliance before and after for edited and unedited files |
-| `data/classified_repos.jsonl` | the classified corpus. 24 records marked `reconstructed_from_measures` were rebuilt from the measurement rows after their original classification file was lost; their instruction-file path is unknown |
-| `pipeline/01_discover_classify.py` | finds and classifies repositories through the GitHub API |
-| `pipeline/02_measure.py` | clones each repository with blobs filtered and measures compliance at both revisions |
-| `analysis/final_inference.py` | every statistic above |
-| `verify_numbers.py` | recomputes the headline figures from `data/measures.jsonl` and exits non-zero if any disagree |
+| `data/measures.jsonl` | one record per rule instance: repo, family, tool-backed, rule date, compliance before and after, split by edited and unedited files |
+| `data/classified_repos.jsonl` | the classified corpus. 24 records marked `reconstructed_from_measures` were rebuilt after their original classification file was lost; their instruction-file path is unknown |
+| `src/policyprop/metrics.py` | the three compliance metrics |
+| `src/policyprop/analysis.py` | pooling, permutation test, clustered bootstrap |
+| `pipeline/` | collection scripts |
+| `docs/DESIGN.md` | two measurement designs that look right and are not |
 
-## Reproduce
+## Limitations
 
-Standard-library Python only.
+- **Observational.** Repositories that configure linters differ from those that do not in ways the data cannot see. Read the coefficient as the difference between projects that mechanise policy and projects that do not.
+- **Skewed.** Median headroom captured is 0.81% tool-backed against 0.00% declaration-only, so a minority of instances drives the means. The clustered bootstrap is the more trustworthy of the two procedures.
+- **Selection.** The three measurable families are exactly those for which enforcement tooling already exists.
+- **Rule detection is pattern matching** over prose and will both miss rules and over-fire.
+- **Tool-backing means config is present**, not that CI runs it, and not that the config predates the rule.
+- **Re-running collection will not reproduce the corpus**: repositories change and search results drift. The committed data is the corpus the results are computed on.
 
-```bash
-python3 verify_numbers.py
-python3 analysis/final_inference.py
-```
+## Next
 
-Re-running the pipeline needs an authenticated `gh` CLI and hits live GitHub. Repositories and search results change over time, so a fresh run will not match the released data exactly. The files in `data/` are the corpus the results are computed on.
-
-## A measurement trap worth knowing about
-
-Two tempting designs give clean and meaningless results. If the outcome is a marker the rule itself introduces, its value before the rule is zero by construction. And if you split files into edited and unedited and use the unedited ones as a control, their change is zero by construction too, because an unmodified file is byte-identical at both revisions. This project fell into both before catching them.
-
-## Paper
-
-A manuscript is under preparation. The full text will be added here after its first review.
+- Field test: offer enforcement config to repositories that declare a rule with nothing behind it, and measure what changes after it is merged. That turns an observational gap into an intervention.
+- Extend beyond Python; the method needs only a deterministic per-file check.
 
 ## AI use
 
-Yerkhat Takatbek chose the question, rejected weaker versions of it, and reviewed each result before keeping it. An AI assistant wrote the collection and analysis code, ran it, did the literature search, and drafted the text. No number was produced or adjusted by a model: every figure comes from logged runs over public data, and `verify_numbers.py` recomputes them.
+Yerkhat Takatbek chose the question, rejected weaker versions of it, and reviewed each result. An AI assistant wrote the collection and analysis code, ran it, searched the literature, and drafted the text. No figure was produced or adjusted by a model: every number comes from logged runs over public data, and `policyprop verify` recomputes them.
 
 ## License
 
-Code: MIT. Data: CC BY 4.0. The measurements are derived from public repositories; each repository's own license applies to its contents.
+Code MIT. Data CC BY 4.0, derived from public repositories; each repository's own license governs its contents.
