@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+title: "Agent instruction files: measuring whether declared rules change code compliance"
+message: "If you use this dataset or code, please cite it."
+type: dataset
+authors:
+  - family-names: Takatbek
+    given-names: Yerkhat
+repository-code: "https://github.com/Yerkhat1/agent-instruction-files"
+abstract: >-
+  Compliance measured across 753 rules declared in CLAUDE.md and AGENTS.md files
+  in 410 public Python repositories, using static analysis at the commit where
+  each rule first appears and at HEAD. Two thirds of rules were declared against
+  code that already complied. Among rules declared below ceiling, those backed by
+  enforcement tooling closed roughly three times more of the remaining gap than
+  rules stated only in prose, with no difference in how much of the codebase was
+  edited.
+keywords:
+  - large language models
+  - ai agents
+  - empirical software engineering
+  - mining software repositories
+license: MIT
+version: 0.1.0
+date-released: "2026-10-06"
